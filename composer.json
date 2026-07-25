@@ -1,0 +1,15 @@
+{
+    "name": "alfacode-team/hkm-plugin-vitemanifest",
+    "description": "HKM Kernel plugin providing 'vite.manifest'.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["hkm-kernel", "plugin", "php", "vite.manifest"],
+    "require": {
+        "php": ">=8.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "Plugins\\ViteManifest\\": ""
+        }
+    }
+}
