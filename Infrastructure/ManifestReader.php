@@ -21,6 +21,14 @@ final class ManifestReader
     private static array $cache = [];
 
     /**
+     * mtime+size the cached entry was read at, so a redeployed manifest is
+     * picked up without restarting the worker.
+     *
+     * @var array<string, array{int, int}>
+     */
+    private static array $stamp = [];
+
+    /**
      * Return the decoded manifest at $path, cached by path.
      *
      * @return array<string, mixed>
@@ -28,7 +36,18 @@ final class ManifestReader
      */
     public function load(string $path): array
     {
-        if (isset(self::$cache[$path])) {
+        // Cached FOREVER previously, with no invalidation. Under a resident
+        // worker (Swoole) a zero-downtime redeploy writes a new manifest with
+        // new content hashes, but the worker kept emitting the old URLs — so
+        // every asset 404'd until someone restarted the process, and the site
+        // rendered unstyled and scriptless with nothing obviously wrong.
+        //
+        // Stat-invalidate on mtime AND size: mtime alone has one-second
+        // granularity, so two writes inside the same second could otherwise be
+        // missed. Same rule the environment loader's cache uses.
+        $current = self::stampOf($path);
+
+        if (isset(self::$cache[$path]) && (self::$stamp[$path] ?? null) === $current) {
             return self::$cache[$path];
         }
 
@@ -41,7 +60,17 @@ final class ManifestReader
             throw new ViteManifestNotFoundException("Vite manifest is not valid JSON at: {$path}");
         }
 
+        self::$stamp[$path] = self::stampOf($path);
+
         return self::$cache[$path] = $decoded;
+    }
+
+    /** @return array{int, int} mtime and size, or [0, 0] when absent. */
+    private static function stampOf(string $path): array
+    {
+        $stat = @stat($path);
+
+        return $stat === false ? [0, 0] : [(int) $stat['mtime'], (int) $stat['size']];
     }
 
     /**
