@@ -41,6 +41,13 @@ final class Vite implements ViteContract, Stringable
     /** @var string|list<string> */
     private string|array $entryPoints = [];
 
+    /**
+     * Memoised hot-file lookup. Whether a dev server is running cannot change
+     * within a single render, so the filesystem is consulted at most once.
+     */
+    private bool $hotFileResolved = false;
+    private ?string $hotFilePath = null;
+
     public function __construct(
         private ViteConfig $config,
         private readonly ManifestReader $manifest = new ManifestReader(),
@@ -117,15 +124,29 @@ final class Vite implements ViteContract, Stringable
      */
     private function hotFile(): ?string
     {
+        // Memoised per instance. In production no hot file exists, so this used
+        // to run a glob() over the public directory on EVERY render purely to
+        // conclude "not hot" — a filesystem scan per page view, on the hot path,
+        // for an answer that cannot change within a request.
+        if ($this->hotFileResolved) {
+            return $this->hotFilePath;
+        }
+
+        $this->hotFileResolved = true;
+
         $own = $this->config->hotFilePath();
         if (is_file($own)) {
-            return $own;
+            return $this->hotFilePath = $own;
         }
+
+        // An explicit override never falls back to a sibling surface.
         if ($this->config->hotFile !== null) {
-            return null;
+            return $this->hotFilePath = null;
         }
+
         $siblings = glob(rtrim($this->config->publicPath, '/') . '/*-hot') ?: [];
-        return $siblings[0] ?? null;
+
+        return $this->hotFilePath = ($siblings[0] ?? null);
     }
 
     /** Dev-server URL for an asset. The hot file holds "<devUrl><base>". */
